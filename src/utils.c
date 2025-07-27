@@ -4,25 +4,42 @@ char safeChar(unsigned char c) {
     return (isprint(c) && c != '\0') ? c : '.';
 }
 
-boolean checkFileStatus(const char * filename) {
+fat32_status_t checkFileStatus(const char * filename) {
     struct stat buffer;
     if (stat(filename, &buffer) != 0) {
-        if (errno == ENOENT) {
-            printf("File %s does not seem to exist\n", filename);
-            return False;
+        if (errno == ENOENT) {            
+            printf("File %s does not seem yet to exist\nCreating new FAT32 volume at %s...\n", filename, filename);
+            volume = fopen(filename, "wb");
+            if (!volume) {
+                perror("Failed to create new FAT32 volume");
+                return FAT32_ERROR;
+            }
+
+            if (fseek(volume, TOTAL_SIZE - 1, SEEK_SET) != 0) {
+                perror("Failed to allocated 20 MB to new FAT32 volume. Closing ...");
+                fclose(volume);
+                return FAT32_ERROR;
+            }
+        
+            if (fwrite("", 1, 1, volume) != 1) {
+                perror("Failed to allocated 20 MB to new FAT32 volume. Closing ...");
+                fclose(volume);
+                return FAT32_ERROR;
+            }
+            return FAT32_NOT_FOUND;
         } else {
             printf("File with the path %s can't be accessed\n", filename);
-            return False;
+            return FAT32_ERROR;
         }
     }
     if (!S_ISREG(buffer.st_mode)) {
         printf("%s is not a regular file\n", filename);
-        return False;
+        return FAT32_ERROR;
     }
     if (buffer.st_size == 0) {
         printf("File %s is empty\nAre you certain that you want to use it as a new volume for FAT32 emulator \033[34mxkubpise\033[0m (Y/n):", filename);
         // Add reading user input and formatting if requested
-        return False;
+        return FAT32_ERROR;
     }
 
     FILE * f = fopen(filename, "rb");
@@ -55,5 +72,5 @@ boolean checkFileStatus(const char * filename) {
         }
     }
     fclose(f);
-    return True;
+    return FAT32_OK;
 }

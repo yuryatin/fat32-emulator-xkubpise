@@ -24,8 +24,11 @@
 #define N_CLUSTERS (N_DATA_SECTORS / SECTORS_PER_CLUSTER)
 
 typedef enum { False, True } boolean;
+typedef enum { FAT32_OK, FAT32_ERROR, FAT32_NOT_FOUND } fat32_status_t;
+
+extern FILE * volume;
 
 char safeChar(unsigned char c);
-boolean checkFileStatus(const char * filename);
+fat32_status_t checkFileStatus(const char * filename);
 
 #endif

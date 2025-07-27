@@ -66,14 +66,14 @@ boolean isValidFAT32xkubpise(const char * filename) {
     }
 
     unsigned char buffer[SECTOR_SIZE];
-    size_t bpbRead = fread(buffer, 1, SECTOR_SIZE, volume);
-    if(bpbRead != SECTOR_SIZE) {
-        appendToFAT32ReadingErrors("Couldn't read full BIOS Parameter Block\nOnly %ld bytes have been read\n", bpbRead);
+    size_t bootSectorRead = fread(buffer, 1, SECTOR_SIZE, volume);
+    if(bootSectorRead != SECTOR_SIZE) {
+        appendToFAT32ReadingErrors("Couldn't read full boot sector\nOnly %ld bytes have been read\n", bootSectorRead);
         fclose(volume);
         return False;
     } else fclose(volume);
 
-    if (!(buffer[0x52] == 'F' && buffer[0x53] == 'A' && buffer[0x54] == 'T' && buffer[0x55] == '3' && buffer[0x56] == '2' && buffer[0x58] == 0x00 && buffer[0x59] == 0x00)) {
+    if (!(buffer[0x52] == 'F' && buffer[0x53] == 'A' && buffer[0x54] == 'T' && buffer[0x55] == '3' && buffer[0x56] == '2')) {
         appendToFAT32ReadingErrors("Unexpected FAT32 signature: %c%c%c%c%c%c%c%c\n\t\t(hex): %02X %02X %02X %02X %02X %02X %02X %02X\n", safeChar(buffer[0x52]), safeChar(buffer[0x53]), safeChar(buffer[0x54]), safeChar(buffer[0x55]), safeChar(buffer[0x56]), safeChar(buffer[0x57]), safeChar(buffer[0x58]), safeChar(buffer[0x59]), (unsigned char)buffer[0x52], (unsigned char)buffer[0x53], (unsigned char)buffer[0x54], (unsigned char)buffer[0x55], (unsigned char)buffer[0x56], (unsigned char)buffer[0x57], (unsigned char)buffer[0x58], (unsigned char)buffer[0x59]);
         anyErrors = True;
     }
