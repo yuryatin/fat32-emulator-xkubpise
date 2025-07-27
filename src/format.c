@@ -1,6 +1,48 @@
 #include "format.h"
 
-boolean preformat(void) {
+success format(void) {
+    puts("Formatting FAT32 volume...");
+    success ret = Success;
+    // I initialize FAT tables with zeros
+    uint32_t * fat = calloc(FAT_SIZE, SECTOR_SIZE); if (!fat) return Failure;
+
+    fat[0] = 0xFFFFFFF8; // FAT[0]: media descriptor in low byte + reserved bits set (0x0FFFFFF8)
+    fat[1] = 0x0FFFFFFF; // FAT[1]: end of clusterchain marker
+
+    // I write both FAT copies
+    for (uint8_t i = 0; i < N_FATS; ++i) {
+        ret = writeSectors(N_RESERVED_SECTORS + i * FAT_SIZE, fat, FAT_SIZE);
+        if (ret == Failure) {
+            free(fat);
+            return ret;
+        }
+    }
+    free(fat);
+
+    // I initialize root directory cluster with zeros
+    uint8_t * emptyCluster = calloc(SECTORS_PER_CLUSTER, SECTOR_SIZE);
+    if (!emptyCluster) return Failure;
+    ret = writeSectors(ROOT_DIR_SECTOR, emptyCluster, SECTORS_PER_CLUSTER);
+    free(emptyCluster);
+    if (ret == Failure) return ret;
+
+    // I initialize FSInfo sector (i.e., sector 1)
+    uint8_t fsinfoSector[SECTOR_SIZE];
+    memset(fsinfoSector, 0, SECTOR_SIZE);
+    // FSInfo signature offsets
+    *(uint32_t *)(fsinfoSector + 0x00) = 0x41615252;  // Lead signature
+    *(uint32_t *)(fsinfoSector + 0x1E4) = 0x61417272; // Structure signature
+    *(uint32_t *)(fsinfoSector + 0x1E8) = TOTAL_N_SECTORS / SECTORS_PER_CLUSTER - 2; // Free cluster count (approximate)
+    *(uint32_t *)(fsinfoSector + 0x1EC) = ROOT_CLUSTER; // Next free cluster (start at root cluster)
+
+    ret = writeSector(1, fsinfoSector);
+    if (ret == Failure) return ret;
+
+    return Success;
+}
+
+
+success preformat(void) {
     // Allocate and zero the first 512 bytes (boot sector)
     unsigned char bootSector[SECTOR_SIZE] = {0};
 
@@ -88,24 +130,24 @@ boolean preformat(void) {
     if (fseek(volume, 0, SEEK_SET) != 0) {
         perror("Error saving sector 0");
         fclose(volume);
-        return False;
+        return Failure;
     }
     if (fwrite(bootSector, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
         perror("Error saving sector 0");
         fclose(volume);
-        return False;
+        return Failure;
     }
 
     // Write backup boot sector
     if (fseek(volume, 6 * SECTOR_SIZE, SEEK_SET) != 0) {
         perror("Error saving sector 6");
         fclose(volume);
-        return False;
+        return Failure;
     }
     if (fwrite(bootSector, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
         perror("Error saving sector 6");
         fclose(volume);
-        return False;
+        return Failure;
     }
-    return True;
+    return Success;
 }

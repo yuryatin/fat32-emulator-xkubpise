@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <sys/stat.h>
@@ -22,12 +23,18 @@
 #define FIRST_DATA_SECTOR (N_FATS * FAT_SIZE + N_RESERVED_SECTORS)
 #define N_DATA_SECTORS (TOTAL_N_SECTORS - FIRST_DATA_SECTOR)
 #define N_CLUSTERS (N_DATA_SECTORS / SECTORS_PER_CLUSTER)
+#define ROOT_CLUSTER 2
+#define ROOT_DIR_SECTOR (FIRST_DATA_SECTOR + (ROOT_CLUSTER - 2) * SECTORS_PER_CLUSTER)
+#define FAT_ENTRIES_COUNT (FAT_SIZE * SECTOR_SIZE / 4)
 
 typedef enum { False, True } boolean;
+typedef enum { Failure, Success } success;
 typedef enum { FAT32_OK, FAT32_ERROR, FAT32_NOT_FOUND } fat32_status_t;
 
 extern FILE * volume;
 
+success writeSector(uint32_t sector, const void * data);
+success writeSectors(uint32_t startSector, const void * data, size_t count);
 char safeChar(unsigned char c);
 fat32_status_t checkFileStatus(const char * filename);
 

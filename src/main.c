@@ -7,17 +7,25 @@ char fat32ReadingErrors[FAT32ERRORS_SIZE];
 FILE * volume;
 
 int main(int argc, char *argv[]) {
-    boolean formatResult = False;
+    success preFormatResult, formatResult;
     if (argc > 1) fat32 = argv[1];
     else puts("No path to a configuration file was provided. Proceeding with Default parameters.");
     fat32_status_t check = checkFileStatus(fat32);
     switch (check)
     {
     case FAT32_NOT_FOUND:
-        formatResult = preformat();
-        if (!formatResult) {
+    preFormatResult = preformat();
+        if (preFormatResult == Failure) {
             puts("\nFAT32 volume pre-formatting failed.\n");
             return 1;
+        } else {
+            formatResult = format();
+            if (formatResult == Failure) {
+                puts("\nFAT32 volume formatting failed.\n");
+                return 1;
+            } else {
+                puts("\nFAT32 volume pre-formatting and formatting completed successfully.\n");
+            }
         }
         break;
     case FAT32_ERROR:

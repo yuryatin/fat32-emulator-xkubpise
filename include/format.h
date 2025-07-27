@@ -3,6 +3,7 @@
 
 #include "utils.h"
 
-boolean preformat(void);
+success format(void);
+success preformat(void);
 
 #endif
