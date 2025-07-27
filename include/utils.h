@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <ctype.h>
 
-#define FAT32ERRORS_SIZE 4 * 1024
+#define FAT32ERRORS_SIZE (4 * 1024)
 
 #define SECTOR_SIZE 512
 #define SECTORS_PER_CLUSTER 1

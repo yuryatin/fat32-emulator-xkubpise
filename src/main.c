@@ -1,6 +1,7 @@
 #include "utils.h"
 #include "fat32.h"
 #include "format.h"
+#include "emulator.h"
 
 const char * fat32 = NULL;
 char fat32ReadingErrors[FAT32ERRORS_SIZE];
@@ -38,5 +39,6 @@ int main(int argc, char *argv[]) {
         puts("");
         return 1;
     }
+    emulate();
     return 0;
 }
