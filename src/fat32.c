@@ -4,6 +4,35 @@
 extern char fat32ReadingErrors[FAT32ERRORS_SIZE];
 extern FILE * volume;
 
+void initializeDotEntries(uint32_t cluster, uint32_t parentCluster) {
+    unsigned char buffer[SECTOR_SIZE];
+    memset(buffer, 0, SECTOR_SIZE);
+
+    // Entry for '.'
+    strncpy((char *)buffer, ".", 1);
+    buffer[11] = 0x10; // Directory attribute
+    buffer[26] = cluster & 0xFF;
+    buffer[27] = (cluster >> 8) & 0xFF;
+    buffer[20] = (cluster >> 16) & 0xFF;
+    buffer[21] = (cluster >> 24) & 0xFF;
+
+    // Entry for '..'
+    strncpy((char *)(buffer + 32), "..", 2);
+    buffer[32 + 11] = 0x10; // Directory attribute
+    buffer[32 + 26] = parentCluster & 0xFF;
+    buffer[32 + 27] = (parentCluster >> 8) & 0xFF;
+    buffer[32 + 20] = (parentCluster >> 16) & 0xFF;
+    buffer[32 + 21] = (parentCluster >> 24) & 0xFF;
+
+    // Write to first sector of the new cluster
+    uint32_t sector = ROOT_DIR_SECTOR + (cluster - 2) * SECTORS_PER_CLUSTER;
+    fseek(volume, sector * SECTOR_SIZE, SEEK_SET);
+    fwrite(buffer, 1, SECTOR_SIZE, volume);
+    if (ferror(volume)) {
+        printf("Error writing dot entries to sector %u for cluster %u\n", sector, cluster);
+    }
+}
+
 uint32_t findFreeCluster() {
     uint8_t fatSector[SECTOR_SIZE];
     for (uint32_t cluster = ROOT_CLUSTER; cluster < N_CLUSTERS; ++cluster) { 
@@ -144,6 +173,7 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
         return Failure;
     }
 
+    initializeDotEntries(cluster, parentCluster);
     return Success;
 }
 

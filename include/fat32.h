@@ -14,8 +14,8 @@ typedef struct {
     int parent;
 } FAT32Node;
 
+void initializeDotEntries(uint32_t cluster, uint32_t parentCluster);
 int findFirstFreeEntry(int cluster);
-
 void commentOnExtFlags(uint16_t bpb_ExtFlags);
 boolean isValidFAT32xkubpise(const char * filename);
 
