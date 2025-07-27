@@ -1,7 +1,9 @@
 #include "emulator.h"
+#include "fat32.h"
 
 static char * username;
 static char location[LOCATION_MAX_LENGTH] = "/";
+FAT32Node currentNode;
 
 void printPrompt(void) {
     printf("%s@xkubpise %s %% ", username, location);
