@@ -1,6 +1,8 @@
 #ifndef EMULATOR_H_xkubpise
 #define EMULATOR_H_xkubpise
 
+#include <unistd.h>
+#include <sys/ioctl.h>
 #include "utils.h"
 
 #define LOCATION_MAX_LENGTH (1024 * 4)

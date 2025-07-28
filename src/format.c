@@ -9,6 +9,7 @@ success format(void) {
 
     fat[0] = 0xFFFFFFF8; // FAT[0]: media descriptor in low byte + reserved bits set (0x0FFFFFF8)
     fat[1] = 0x0FFFFFFF; // FAT[1]: end of clusterchain marker
+    fat[ROOT_CLUSTER] = 0x0FFFFFFF; // FAT[2]: root directory cluster (end of chain marker)
 
     // I write both FAT copies
     for (uint8_t i = 0; i < N_FATS; ++i) {
@@ -151,5 +152,6 @@ success preformat(void) {
         fclose(volume);
         return Failure;
     }
+    fflush(volume);
     return Success;
 }

@@ -34,8 +34,12 @@ typedef enum { FAT32_OK, FAT32_ERROR, FAT32_NOT_FOUND } fat32_status_t;
 
 extern FILE * volume;
 
+void skipRest();
+int cmpLocalNames(const void * a, const void * b);
+void extractNameToBuffer(const unsigned char * entry, char * dest);
 void trimAndPrintName(const unsigned char * entry);
 void formatShortName(const char * fileName, unsigned char * entryName);
+void toLowerRegister(const char * name, char * nameLower);
 boolean isValidShortChar(char c);
 boolean isValidShortNameAndUppercaseFile(char * name);
 boolean isValidShortNameAndUppercaseFolder(char * name);

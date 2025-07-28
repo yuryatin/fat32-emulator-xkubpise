@@ -3,32 +3,150 @@
 
 extern char fat32ReadingErrors[FAT32ERRORS_SIZE];
 extern FILE * volume;
+extern char localFilesAndFolders[SECTOR_SIZE / FAT_ENTRY_SIZE][FULL_FILE_STRING_SIZE];
 
-void collectNamesInCluster(int cluster) {
+void readSector(uint32_t sector, uint8_t * buffer) {
+    fseek(volume, sector * SECTOR_SIZE, SEEK_SET);
+    fread(buffer, 1, SECTOR_SIZE, volume);
+    if (ferror(volume)) {
+        printf("Error reading sector %u\n", sector);
+        perror("fread");
+    }
+}
+
+void readCluster(uint32_t clusterNumber, uint8_t * buffer) {
+    uint32_t firstSector = FIRST_DATA_SECTOR + (clusterNumber - 2) * SECTORS_PER_CLUSTER;
+    for (uint32_t sector = 0; sector < SECTORS_PER_CLUSTER; ++sector) {
+        readSector(firstSector + sector, buffer + sector * SECTOR_SIZE);
+    }
+}
+
+uint32_t getDotDotCluster(uint32_t cluster) {
+    uint8_t buffer[CLUSTER_SIZE];
+    readCluster(cluster, buffer);
+
+    for (int i = 0; i < CLUSTER_SIZE; i += ENTRY_SIZE) {
+        if (buffer[i] == '.' && buffer[i + 1] == '.') {
+            uint16_t high = *(uint16_t *)&buffer[i + 20];
+            uint16_t low  = *(uint16_t *)&buffer[i + 26];
+            return ((uint32_t)high << 16) | low;
+        }
+    }
+    return 0;  // Not found
+}
+
+const char * findNameByCluster(uint32_t parentCluster, uint32_t targetCluster) {
+    static char name[12];
+    uint8_t buffer[CLUSTER_SIZE];
+    readCluster(parentCluster, buffer);
+
+    for (int i = 0; i < CLUSTER_SIZE; i += ENTRY_SIZE) {
+        if (buffer[i] == 0x00 || buffer[i] == 0xE5) continue;
+        if ((buffer[i + 11] & 0x10) == 0) continue;  // Not a directory
+
+        uint16_t high = *(uint16_t *)&buffer[i + 20];
+        uint16_t low  = *(uint16_t *)&buffer[i + 26];
+        uint32_t cluster = ((uint32_t)high << 16) | low;
+
+        if (cluster == targetCluster) {
+            memcpy(name, &buffer[i], 11);
+            name[11] = '\0';
+
+            for (int j = 10; j >= 0; --j) {
+                if (name[j] == ' ') name[j] = '\0';
+                else break;
+            }
+            return name;
+        }
+    }
+    return NULL;
+}
+
+void buildPathToRoot(uint32_t currentCluster, char * outPath) {
+    char temp[MAX_PATH] = "";
+    outPath[0] = '\0';
+
+    while (currentCluster != ROOT_CLUSTER) { 
+        uint32_t parentCluster = getDotDotCluster(currentCluster);
+        const char * name = findNameByCluster(parentCluster, currentCluster);
+        if (!name) break;
+
+        char segment[64];
+        snprintf(segment, sizeof(segment), "/%s", name);
+        strcat(segment, temp);
+        strcpy(temp, segment);
+
+        currentCluster = parentCluster;
+    }
+
+    // root folder
+    if (strlen(temp) == 0) strcpy(outPath, "/");
+    else toLowerRegister(temp, outPath);
+}
+
+uint32_t findSubdirectoryCluster(const char * name, uint32_t cluster) {
+    uint8_t buffer[SECTOR_SIZE];
+    char formattedName[11];
+    memset(formattedName, ' ', 11);
+    
+    size_t len = strlen(name);
+    size_t i;
+    for (i = 0; i < len && i < 11; ++i)
+        formattedName[i] = toupper(name[i]);
+
+    for (uint32_t sector = 0; sector < SECTORS_PER_CLUSTER; ++sector) {
+        uint32_t baseSector = ROOT_DIR_SECTOR + (cluster - 2) * SECTORS_PER_CLUSTER + sector;
+        fseek(volume, (baseSector + sector) * SECTOR_SIZE, SEEK_SET);
+        int ret = fread(buffer, 1, SECTOR_SIZE, volume);
+        if (!ret) continue;
+
+        for (int offset = 0; offset < SECTOR_SIZE; offset += ENTRY_SIZE) {
+            uint8_t * entry = buffer + offset;
+
+            if (entry[0] == 0x00) return 0;         // End of directory
+            if (entry[0] == 0xE5) continue;         // Deleted entry
+            if (!(entry[11] & 0x10)) continue;      // Not a directory
+
+            if (memcmp(entry, formattedName, 11) == 0) {
+                uint16_t high = *(uint16_t *)(entry + 20);
+                uint16_t low  = *(uint16_t *)(entry + 26);
+                return (high << 16) | low; 
+            }
+        }
+    }
+    return 0; // Not found
+}
+
+
+int collectNamesInCluster(int cluster) {
     if (cluster < 2 || cluster >= N_CLUSTERS) {
         printf("Invalid cluster number: %d\n", cluster);
-        return;
+        return 0;
     }
+    int count = 0;
 
     uint32_t baseSector = ROOT_DIR_SECTOR + (cluster - 2) * SECTORS_PER_CLUSTER;
     unsigned char buffer[SECTOR_SIZE];
 
     for (int sector = 0; sector < SECTORS_PER_CLUSTER; ++sector) {
         fseek(volume, (baseSector + sector) * SECTOR_SIZE, SEEK_SET);
-        if (fread(buffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
-            printf("Failed to read sector %u\n", baseSector + sector);
+        int ret = fread(buffer, 1, SECTOR_SIZE, volume);
+        if (ret != SECTOR_SIZE) {
+            printf("Failed to read sector %u\nRead only %d bytes\n", baseSector + sector, ret);
             continue;
         }
 
         for (int i = 0; i < SECTOR_SIZE; i += ENTRY_SIZE) {
             unsigned char * entry = &buffer[i];
 
-            if (entry[0] == 0x00) return; // No more entries
+            if (entry[0] == 0x00) break; // No more entries
             if (entry[0] == 0xE5) continue; // Deleted entry
             if ((entry[11] & 0x0F) == 0x0F) continue; // Long File Name entry, skip for now
-            trimAndPrintName(entry);
+            extractNameToBuffer(entry, localFilesAndFolders[count++]);
         }
     }
+    qsort(localFilesAndFolders, count, FULL_FILE_STRING_SIZE, cmpLocalNames);
+    return count;
 }
 
 void initializeDotEntries(uint32_t cluster, uint32_t parentCluster) {
@@ -36,6 +154,7 @@ void initializeDotEntries(uint32_t cluster, uint32_t parentCluster) {
     memset(buffer, 0, SECTOR_SIZE);
 
     // Entry for '.'
+    memset(buffer, ' ', 11);
     strncpy((char *)buffer, ".", 1);
     buffer[11] = 0x10; // Directory attribute
     buffer[26] = cluster & 0xFF;
@@ -44,6 +163,7 @@ void initializeDotEntries(uint32_t cluster, uint32_t parentCluster) {
     buffer[21] = (cluster >> 24) & 0xFF;
 
     // Entry for '..'
+    memset(buffer + 32, ' ', 11);
     strncpy((char *)(buffer + 32), "..", 2);
     buffer[32 + 11] = 0x10; // Directory attribute
     buffer[32 + 26] = parentCluster & 0xFF;
@@ -58,6 +178,7 @@ void initializeDotEntries(uint32_t cluster, uint32_t parentCluster) {
     if (ferror(volume)) {
         printf("Error writing dot entries to sector %u for cluster %u\n", sector, cluster);
     }
+    fflush(volume);
 }
 
 uint32_t findFreeCluster() {
@@ -71,6 +192,7 @@ uint32_t findFreeCluster() {
         fread(fatSector, 1, SECTOR_SIZE, volume);
         if (ferror(volume)) {
             printf("Error reading FAT sector for cluster %u\n", cluster);
+            perror("fread");
             return 0;
         }
 
@@ -81,7 +203,7 @@ uint32_t findFreeCluster() {
 }
 
 success createEmptyFile(const char * fileName, int parentCluster) {
-    if (!fileName || strlen(fileName) == 0 || strlen(fileName) > FILE_NAME_MAX_LENGTH) {
+    if (!fileName || strlen(fileName) == 0 || strlen(fileName) > FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH + 1) {
         printf("Invalid file name: %s\n", fileName);
         return Failure;
     }
@@ -107,7 +229,7 @@ success createEmptyFile(const char * fileName, int parentCluster) {
     // I clear and set file entry
     memset(buffer + freeEntryIndex * ENTRY_SIZE, 0, ENTRY_SIZE);
     formatShortName(fileName, buffer + freeEntryIndex * ENTRY_SIZE);
-    buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH] = 0x20; // Regular file attribute
+    buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH] = 0x20; // Regular file attribute
 
     // No cluster allocated, so set both high and low words of cluster number to 0
     buffer[freeEntryIndex * ENTRY_SIZE + 26] = 0x00; // low word (low byte)
@@ -127,13 +249,13 @@ success createEmptyFile(const char * fileName, int parentCluster) {
         printf("Failed to write to sector %u for cluster %d\n", sector, parentCluster);
         return Failure;
     }
-
+    fflush(volume);
     return Success;
 }
 
 success createNewFolder(const char * folderName, int cluster, int parentCluster) {
     size_t nameLen = strlen(folderName);
-    if (!folderName || nameLen == 0 || nameLen > FILE_NAME_MAX_LENGTH - 3) {
+    if (!folderName || nameLen == 0 || nameLen > FILE_NAME_MAX_LENGTH) {
         printf("Invalid folder name: %s\n", folderName);
         return Failure;
     }
@@ -162,14 +284,14 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
     }
     unsigned char * entryName = buffer + freeEntryIndex * ENTRY_SIZE;
     memset(entryName, 0, ENTRY_SIZE); // Clear the entry
-    memset(entryName, 0x20, FILE_NAME_MAX_LENGTH);
+    memset(entryName, 0x20, FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH);
     for (size_t i = 0; i < nameLen; ++i) {
         char c = folderName[i];
         if (c >= 'a' && c <= 'z') c -= 32;  // Uppercase
         entryName[i] = c;
     }
 
-    buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH] = 0x10; // Directory attribute
+    buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH] = 0x10; // Directory attribute
     uint32_t firstCluster = cluster;
     buffer[freeEntryIndex * ENTRY_SIZE + 26] = firstCluster & 0xFF;
     buffer[freeEntryIndex * ENTRY_SIZE + 27] = (firstCluster >> 8) & 0xFF;
@@ -179,7 +301,8 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
     fseek(volume, sector * SECTOR_SIZE, SEEK_SET);
     size_t writtenBytes = fwrite(buffer, 1, SECTOR_SIZE, volume);
     if (writtenBytes != SECTOR_SIZE) {
-        printf("Failed to write to sector %u for cluster %d\n", sector, parentCluster);
+        printf("Failed to write to sector %u for cluster %d, number of bytes written %zu\n", sector, parentCluster, writtenBytes);
+        perror("fwrite");
         return Failure;
     }
 
@@ -207,8 +330,8 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
         printf("Failed to write updated FAT sector %u\n", fatSector);
         return Failure;
     }
-
     initializeDotEntries(cluster, parentCluster);
+    fflush(volume);
     return Success;
 }
 
@@ -277,7 +400,7 @@ void commentOnExtFlags(uint16_t bpb_ExtFlags) {
 
 boolean isValidFAT32xkubpise(const char * filename) {
     boolean anyErrors = False;
-    volume = fopen(filename, "rb");
+    volume = fopen(filename, "r+b");
     if (!volume) {
         appendToFAT32ReadingErrors("Error opening the volume\n");
         return False;
@@ -302,7 +425,7 @@ boolean isValidFAT32xkubpise(const char * filename) {
         appendToFAT32ReadingErrors("Couldn't read full boot sector\nOnly %ld bytes have been read\n", bootSectorRead);
         fclose(volume);
         return False;
-    } else fclose(volume);
+    }
 
     if (!(buffer[0x52] == 'F' && buffer[0x53] == 'A' && buffer[0x54] == 'T' && buffer[0x55] == '3' && buffer[0x56] == '2')) {
         appendToFAT32ReadingErrors("Unexpected FAT32 signature: %c%c%c%c%c%c%c%c\n\t\t(hex): %02X %02X %02X %02X %02X %02X %02X %02X\n", safeChar(buffer[0x52]), safeChar(buffer[0x53]), safeChar(buffer[0x54]), safeChar(buffer[0x55]), safeChar(buffer[0x56]), safeChar(buffer[0x57]), safeChar(buffer[0x58]), safeChar(buffer[0x59]), (unsigned char)buffer[0x52], (unsigned char)buffer[0x53], (unsigned char)buffer[0x54], (unsigned char)buffer[0x55], (unsigned char)buffer[0x56], (unsigned char)buffer[0x57], (unsigned char)buffer[0x58], (unsigned char)buffer[0x59]);

@@ -5,7 +5,9 @@
 
 #define FILE_NAME_MAX_LENGTH 8
 #define FILE_EXT_MAX_LENGTH 3
+#define FULL_FILE_STRING_SIZE (FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH + 2)
 #define ENTRY_SIZE 32
+#define MAX_PATH 256
 
 typedef struct {
     char name[FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH];
@@ -14,6 +16,12 @@ typedef struct {
     int parent;
 } FAT32Node;
 
+void buildPathToRoot(uint32_t currentCluster, char * outPath);
+uint32_t findSubdirectoryCluster(const char * name, uint32_t cluster);
+uint32_t findFreeCluster();
+success createEmptyFile(const char * fileName, int parentCluster);
+success createNewFolder(const char * folderName, int cluster, int parentCluster);
+int collectNamesInCluster(int cluster);
 void initializeDotEntries(uint32_t cluster, uint32_t parentCluster);
 int findFirstFreeEntry(int cluster);
 void commentOnExtFlags(uint16_t bpb_ExtFlags);

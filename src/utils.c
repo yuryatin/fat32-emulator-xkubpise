@@ -5,20 +5,26 @@
 #include <stdbool.h>
 #include "fat32.h"
 
-void trimAndPrintName(const unsigned char * entry) {
-    char name[FILE_NAME_MAX_LENGTH + 1 + FILE_EXT_MAX_LENGTH + 1] = {0}; // 8 + 1 + 3 + 1 (dot and null)
-    int i;
-    for (i = 0; i < 8 && entry[i] != ' '; ++i) {
-        name[i] = entry[i];
-    }
+void skipRest() {
+    int ch;
+    while ((ch = getchar()) != '\n' && ch != EOF);
+}
+
+int cmpLocalNames(const void * a, const void * b) {
+    const char * nameA = (const char *)a;
+    const char * nameB = (const char *)b;
+    return strcmp(nameA, nameB);
+}
+
+void extractNameToBuffer(const unsigned char * entry, char * dest) {
+    int i = 0, j = 0;
+    while (i < 8 && entry[i] != ' ') dest[j++] = entry[i++];
+
     if (entry[FILE_NAME_MAX_LENGTH] != ' ') {
-        name[i++] = '.';
-        for (int j = FILE_NAME_MAX_LENGTH; j < (FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH) && entry[j] != ' '; ++j) {
-            name[i++] = entry[j];
-        }
+        dest[j++] = '.';
+        for (int k = FILE_NAME_MAX_LENGTH; k < (FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH) && entry[k] != ' '; ++k) dest[j++] = entry[k];
     }
-    name[i] = '\0';
-    printf("Name: %s\n", name);
+    dest[j] = '\0';
 }
 
 void formatShortName(const char * fileName, unsigned char * entryName) {
@@ -35,6 +41,21 @@ void formatShortName(const char * fileName, unsigned char * entryName) {
         entryName[8 + c] = toupper((unsigned char)dot[1 + c]);
 }
 
+void toLowerRegister(const char * name, char * nameLower) {
+    size_t i;
+    for (i = 0; i < strlen(name); ++i) {
+        nameLower[i] = tolower(name[i]);
+    }
+    nameLower[i] = 0x00;
+}
+
+void toUpperRegister(const char * name, char * nameUpper) {
+    size_t i;
+    for (i = 0; i < strlen(name); ++i) {
+        nameUpper[i] = toupper(name[i]);
+    }
+    nameUpper[i] = 0x00;
+}
 
 // Allowed special characters in short (8.3) names
 boolean isValidShortChar(char c) {
