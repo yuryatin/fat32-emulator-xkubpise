@@ -40,7 +40,7 @@ void extractNameToBuffer(const unsigned char * entry, char * dest);
 void trimAndPrintName(const unsigned char * entry);
 void formatShortName(const char * fileName, unsigned char * entryName);
 void toLowerRegister(const char * name, char * nameLower);
-boolean isValidShortChar(char c);
+boolean isValidShortChar(char c, boolean fullPath, boolean withLowercase);
 boolean isValidShortNameAndUppercaseFile(char * name);
 boolean isValidShortNameAndUppercaseFolder(char * name);
 success writeSector(uint32_t sector, const void * data);

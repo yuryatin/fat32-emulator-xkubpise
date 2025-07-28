@@ -22,23 +22,23 @@ void extractNameToBuffer(const unsigned char * entry, char * dest) {
 
     if (entry[FILE_NAME_MAX_LENGTH] != ' ') {
         dest[j++] = '.';
-        for (int k = FILE_NAME_MAX_LENGTH; k < (FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH) && entry[k] != ' '; ++k) dest[j++] = entry[k];
+        for (int k = FILE_NAME_MAX_LENGTH; k < (FILE_AND_EXT_RAW_LENGTH) && entry[k] != ' '; ++k) dest[j++] = entry[k];
     }
     dest[j] = '\0';
 }
 
 void formatShortName(const char * fileName, unsigned char * entryName) {
-    memset(entryName, 0x20, 11); // filled with ASCII spaces
+    memset(entryName, 0x20, FILE_AND_EXT_RAW_LENGTH); // filled with ASCII spaces
 
     const char * dot = strchr(fileName, '.');
     int nameLen = dot ? (dot - fileName) : strlen(fileName);
     int extLen = dot ? strlen(dot + 1) : 0;
 
-    for (int c = 0; c < nameLen && c < 8; ++c)
+    for (int c = 0; c < nameLen && c < FILE_NAME_MAX_LENGTH; ++c)
         entryName[c] = toupper((unsigned char)fileName[c]);
 
-    for (int c = 0; c < extLen && c < 3; ++c)
-        entryName[8 + c] = toupper((unsigned char)dot[1 + c]);
+    for (int c = 0; c < extLen && c < FILE_EXT_MAX_LENGTH; ++c)
+        entryName[FILE_NAME_MAX_LENGTH + c] = toupper((unsigned char)dot[1 + c]);
 }
 
 void toLowerRegister(const char * name, char * nameLower) {
@@ -58,13 +58,16 @@ void toUpperRegister(const char * name, char * nameUpper) {
 }
 
 // Allowed special characters in short (8.3) names
-boolean isValidShortChar(char c) {
-    return (boolean) (c >= 'A' && c <= 'Z') ||
+boolean isValidShortChar(char c, boolean fullPath, boolean withLowercase) {
+    boolean valid = (boolean) (c >= 'A' && c <= 'Z') ||
            (c >= '0' && c <= '9') ||
             c == '!' || c == '#'  || c == '$' || c == '%' ||
             c == '&' || c == '\'' || c == '(' || c == ')' ||
             c == '-' || c == '@'  || c == '^' || c == '_' ||
             c == '`' || c == '{'  || c == '}' || c == '~';
+    if (fullPath) valid = valid || c == '/' || c == '.';
+    if (withLowercase) valid = valid || (c >= 'a' && c <= 'z');
+    return valid;
 }
 
 // We check if the name fits 8.3 and convert to uppercase in-place
@@ -88,7 +91,7 @@ boolean isValidShortNameAndUppercaseFile(char * name) {
     for (size_t i = 0; i < dotIndex; ++i) {
         char c = name[i];
         if (islower(c)) c = toupper(c);
-        if (!isValidShortChar(c)) return False;
+        if (!isValidShortChar(c, False, False)) return False;
         name[i] = c;
     }
 
@@ -96,7 +99,7 @@ boolean isValidShortNameAndUppercaseFile(char * name) {
     for (size_t i = dotIndex + 1; i < len; ++i) {
         char c = name[i];
         if (islower(c)) c = toupper(c);
-        if (!isValidShortChar(c)) return False;
+        if (!isValidShortChar(c, False, False)) return False;
         name[i] = c;
     }
     return True;
@@ -107,7 +110,7 @@ boolean isValidShortNameAndUppercaseFolder(char * name) {
     for (size_t i = 0; i < len; ++i) {
         char c = name[i];
         if (islower(c)) c = toupper(c);
-        if (!isValidShortChar(c)) return False;
+        if (!isValidShortChar(c, False, False)) return False;
         name[i] = c;
     }
     return True;

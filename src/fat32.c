@@ -1,6 +1,7 @@
 #include "fat32.h"
 #include "utils.h"
 
+extern boolean enforceAbsolutePath;
 extern char fat32ReadingErrors[FAT32ERRORS_SIZE];
 extern FILE * volume;
 extern char localFilesAndFolders[SECTOR_SIZE / FAT_ENTRY_SIZE][FULL_FILE_STRING_SIZE];
@@ -62,9 +63,9 @@ const char * findNameByCluster(uint32_t parentCluster, uint32_t targetCluster) {
     return NULL;
 }
 
-void buildPathToRoot(uint32_t currentCluster, char * outPath) {
+void buildPathToRoot(uint32_t currentCluster, char * upPath) {
     char temp[MAX_PATH] = "";
-    outPath[0] = '\0';
+    upPath[0] = '\0';
 
     while (currentCluster != ROOT_CLUSTER) { 
         uint32_t parentCluster = getDotDotCluster(currentCluster);
@@ -80,19 +81,61 @@ void buildPathToRoot(uint32_t currentCluster, char * outPath) {
     }
 
     // root folder
-    if (strlen(temp) == 0) strcpy(outPath, "/");
-    else toLowerRegister(temp, outPath);
+    if (strlen(temp) == 0) strcpy(upPath, "/");
+    else toLowerRegister(temp, upPath);
 }
 
-uint32_t findSubdirectoryCluster(const char * name, uint32_t cluster) {
+uint32_t findClusterByFullPath(const char * inputPath, uint32_t currentCluster) {
+    if (!inputPath || strlen(inputPath) == 0) {
+        puts("No path provided");
+        return 0;
+    }
+    boolean absPath = False;
+    if (inputPath[0] == '/') absPath = True;
+    if (enforceAbsolutePath && !absPath) {
+        puts("\tAbsolute path is required in this configuration of FAT32 emulator \x1b[34mxkubpise\x1b[0m\n\tUse -p option to allow relative paths when launching emulator");
+        return 0;
+    }
+    for (size_t c = 0; c < strlen(inputPath); ++c) {
+        if (!isValidShortChar(inputPath[c], True, True)) {
+            puts("Invalid character(s) in path");
+            return 0;
+        }
+    }
+    char path[MAX_PATH] = {0};
+    strcpy(path, inputPath);
+    char * token = strtok(path, "/");
+    uint32_t iCluster = currentCluster;
+    if (absPath) iCluster = ROOT_CLUSTER;
+
+    while (token) {
+        uint32_t nextCluster = findSubdirectoryCluster(token, iCluster);
+        if (nextCluster == 0) {
+            printf("Directory \033[31m%s\033[0m not found in %s\n", token, inputPath);
+            return 0;
+        }
+        iCluster = nextCluster;
+        token = strtok(NULL, "/");
+    }
+    return iCluster;
+}
+
+uint32_t findSubdirectoryCluster(const char * inputName, uint32_t cluster) {
+    char formattedName[FILE_AND_EXT_RAW_LENGTH];
+    memset(formattedName, ' ', FILE_AND_EXT_RAW_LENGTH);
+    if (strcmp(inputName, ".") == 0) return cluster;
+    if (strcmp(inputName, "..") == 0) return getDotDotCluster(cluster);
+    if (strlen(inputName) > FILE_NAME_MAX_LENGTH) {
+        printf("Invalid length for folder name: %s\n", inputName);
+        return 0;
+    }
+    for (size_t c = 0; c < FILE_NAME_MAX_LENGTH; ++c) {
+        if (inputName[c] == '.') return 0; // Invalid folder name, no extension allowed
+        if (inputName[c] == '\0' || inputName[c] == '/') break;
+        formattedName[c] = toupper(inputName[c]);
+    }
+
     uint8_t buffer[SECTOR_SIZE];
-    char formattedName[11];
-    memset(formattedName, ' ', 11);
-    
-    size_t len = strlen(name);
-    size_t i;
-    for (i = 0; i < len && i < 11; ++i)
-        formattedName[i] = toupper(name[i]);
 
     for (uint32_t sector = 0; sector < SECTORS_PER_CLUSTER; ++sector) {
         uint32_t baseSector = ROOT_DIR_SECTOR + (cluster - 2) * SECTORS_PER_CLUSTER + sector;
@@ -202,69 +245,27 @@ uint32_t findFreeCluster() {
     return 0; // No free cluster found
 }
 
-success createEmptyFile(const char * fileName, int parentCluster) {
-    if (!fileName || strlen(fileName) == 0 || strlen(fileName) > FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH + 1) {
-        printf("Invalid file name: %s\n", fileName);
-        return Failure;
+success createNewObject(const char * objectName, int firstCluster, int parentCluster, boolean isFolder) {
+    size_t nameLen = strlen(objectName);
+    if (isFolder) {
+        if (!objectName || nameLen == 0 || nameLen > FILE_NAME_MAX_LENGTH) {
+            printf("Invalid folder name: %s\n", objectName);
+            return Failure;
+        }
+        if (firstCluster < 2 || firstCluster >= N_CLUSTERS) {
+            printf("Invalid cluster number: %d\n", firstCluster);
+            return Failure;
+        }
+    } else {
+        if (!objectName || nameLen == 0 || nameLen > FILE_AND_EXT_RAW_LENGTH + 1) {
+            printf("Invalid file name: %s\n", objectName);
+            return Failure;
+        }
+        firstCluster = 0;
     }
+
     if (parentCluster < 2 || parentCluster >= N_CLUSTERS) {
         printf("Invalid parent cluster number: %d\n", parentCluster);
-        return Failure;
-    }
-
-    int freeEntryIndex = findFirstFreeEntry(parentCluster);
-    if (freeEntryIndex < 0) {
-        printf("No free entries available in cluster %d\n", parentCluster);
-        return Failure;
-    }
-
-    uint32_t sector = ROOT_DIR_SECTOR + (parentCluster - 2) * SECTORS_PER_CLUSTER;
-    unsigned char buffer[SECTOR_SIZE];
-    fseek(volume, sector * SECTOR_SIZE, SEEK_SET);
-    if (fread(buffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
-        printf("Failed to read sector %u for cluster %d\n", sector, parentCluster);
-        return Failure;
-    }
-
-    // I clear and set file entry
-    memset(buffer + freeEntryIndex * ENTRY_SIZE, 0, ENTRY_SIZE);
-    formatShortName(fileName, buffer + freeEntryIndex * ENTRY_SIZE);
-    buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH] = 0x20; // Regular file attribute
-
-    // No cluster allocated, so set both high and low words of cluster number to 0
-    buffer[freeEntryIndex * ENTRY_SIZE + 26] = 0x00; // low word (low byte)
-    buffer[freeEntryIndex * ENTRY_SIZE + 27] = 0x00; // low word (high byte)
-    buffer[freeEntryIndex * ENTRY_SIZE + 20] = 0x00; // high word (low byte)
-    buffer[freeEntryIndex * ENTRY_SIZE + 21] = 0x00; // high word (high byte)
-
-    // Set file size to 0
-    buffer[freeEntryIndex * ENTRY_SIZE + 28] = 0x00;
-    buffer[freeEntryIndex * ENTRY_SIZE + 29] = 0x00;
-    buffer[freeEntryIndex * ENTRY_SIZE + 30] = 0x00;
-    buffer[freeEntryIndex * ENTRY_SIZE + 31] = 0x00;
-
-    // I write back to disk
-    fseek(volume, sector * SECTOR_SIZE, SEEK_SET);
-    if (fwrite(buffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
-        printf("Failed to write to sector %u for cluster %d\n", sector, parentCluster);
-        return Failure;
-    }
-    fflush(volume);
-    return Success;
-}
-
-success createNewFolder(const char * folderName, int cluster, int parentCluster) {
-    size_t nameLen = strlen(folderName);
-    if (!folderName || nameLen == 0 || nameLen > FILE_NAME_MAX_LENGTH) {
-        printf("Invalid folder name: %s\n", folderName);
-        return Failure;
-    }
-    if (parentCluster < 2 || parentCluster >= N_CLUSTERS) {
-        printf("Invalid parent cluster number: %d\n", parentCluster);
-        return Failure;
-    }
-    if (cluster < 2 || cluster >= N_CLUSTERS) {
-        printf("Invalid cluster number: %d\n", cluster);
         return Failure;
     }
 
@@ -284,15 +285,18 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
     }
     unsigned char * entryName = buffer + freeEntryIndex * ENTRY_SIZE;
     memset(entryName, 0, ENTRY_SIZE); // Clear the entry
-    memset(entryName, 0x20, FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH);
-    for (size_t i = 0; i < nameLen; ++i) {
-        char c = folderName[i];
-        if (c >= 'a' && c <= 'z') c -= 32;  // Uppercase
-        entryName[i] = c;
+    if (isFolder) {
+        buffer[freeEntryIndex * ENTRY_SIZE + FILE_AND_EXT_RAW_LENGTH] = 0x10; // Directory attribute
+        memset(entryName, 0x20, FILE_AND_EXT_RAW_LENGTH);
+        for (size_t i = 0; i < nameLen; ++i) {
+            char c = objectName[i];
+            if (c >= 'a' && c <= 'z') c -= 32;  // Uppercase
+            entryName[i] = c;
+        }
+    } else {
+        formatShortName(objectName, buffer + freeEntryIndex * ENTRY_SIZE);
+        buffer[freeEntryIndex * ENTRY_SIZE + FILE_AND_EXT_RAW_LENGTH] = 0x20; // Regular file attribute
     }
-
-    buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH] = 0x10; // Directory attribute
-    uint32_t firstCluster = cluster;
     buffer[freeEntryIndex * ENTRY_SIZE + 26] = firstCluster & 0xFF;
     buffer[freeEntryIndex * ENTRY_SIZE + 27] = (firstCluster >> 8) & 0xFF;
     buffer[freeEntryIndex * ENTRY_SIZE + 20] = (firstCluster >> 16) & 0xFF;
@@ -305,32 +309,34 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
         perror("fwrite");
         return Failure;
     }
+    
+    if (isFolder) {
+        uint32_t fatOffset = firstCluster * FAT_ENTRY_SIZE;
+        uint32_t fatSector = N_RESERVED_SECTORS + (fatOffset / SECTOR_SIZE);
+        uint32_t fatSectorOffset = fatOffset % SECTOR_SIZE;
 
-    uint32_t fatOffset = cluster * FAT_ENTRY_SIZE;
-    uint32_t fatSector = N_RESERVED_SECTORS + (fatOffset / SECTOR_SIZE);
-    uint32_t fatSectorOffset = fatOffset % SECTOR_SIZE;
+        // I read the sector containing the FAT entry
+        unsigned char fatBuffer[SECTOR_SIZE];
+        fseek(volume, fatSector * SECTOR_SIZE, SEEK_SET);
+        if (fread(fatBuffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
+            printf("Failed to read FAT sector %u\n", fatSector);
+            return Failure;
+        }
 
-    // I read the sector containing the FAT entry
-    unsigned char fatBuffer[SECTOR_SIZE];
-    fseek(volume, fatSector * SECTOR_SIZE, SEEK_SET);
-    if (fread(fatBuffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
-        printf("Failed to read FAT sector %u\n", fatSector);
-        return Failure;
+        // I update the FAT entry to mark the cluster as end-of-chain
+        fatBuffer[fatSectorOffset + 0] = 0xFF;
+        fatBuffer[fatSectorOffset + 1] = 0xFF;
+        fatBuffer[fatSectorOffset + 2] = 0xFF;
+        fatBuffer[fatSectorOffset + 3] = 0x0F;
+
+        // I write the modified FAT sector back
+        fseek(volume, fatSector * SECTOR_SIZE, SEEK_SET);
+        if (fwrite(fatBuffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
+            printf("Failed to write updated FAT sector %u\n", fatSector);
+            return Failure;
+        }
+        initializeDotEntries(firstCluster, parentCluster);
     }
-
-    // I update the FAT entry to mark the cluster as end-of-chain
-    fatBuffer[fatSectorOffset + 0] = 0xFF;
-    fatBuffer[fatSectorOffset + 1] = 0xFF;
-    fatBuffer[fatSectorOffset + 2] = 0xFF;
-    fatBuffer[fatSectorOffset + 3] = 0x0F;
-
-    // I write the modified FAT sector back
-    fseek(volume, fatSector * SECTOR_SIZE, SEEK_SET);
-    if (fwrite(fatBuffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
-        printf("Failed to write updated FAT sector %u\n", fatSector);
-        return Failure;
-    }
-    initializeDotEntries(cluster, parentCluster);
     fflush(volume);
     return Success;
 }

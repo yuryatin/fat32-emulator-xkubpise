@@ -3,15 +3,26 @@
 #include "format.h"
 #include "emulator.h"
 
+boolean enforceAbsolutePath = True;
 const char * fat32 = NULL;
 char fat32ReadingErrors[FAT32ERRORS_SIZE];
 FILE * volume;
 char localFilesAndFolders[SECTOR_SIZE / FAT_ENTRY_SIZE][FULL_FILE_STRING_SIZE];
 
-int main(int argc, char *argv[]) {
+int main(int argc, char * argv[]) {
     success preFormatResult, formatResult;
-    if (argc > 1) fat32 = argv[1];
-    else puts("No path to a configuration file was provided. Proceeding with Default parameters.");
+    if (argc < 2) { 
+        puts("No path to (desired) FAT32 volume was provided. Exiting...");
+        return 1; 
+    }
+    if (strcmp(argv[1], "-p") == 0) {
+        enforceAbsolutePath = False;
+        if (argc > 2) fat32 = argv[2];
+        else {
+            puts("No path to (desired) FAT32 volume was provided. Exiting...");
+            return 1; 
+        }
+    } else fat32 = argv[1];
     fat32_status_t check = checkFileStatus(fat32);
     switch (check)
     {
