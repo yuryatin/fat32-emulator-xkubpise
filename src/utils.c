@@ -1,5 +1,97 @@
 #include "utils.h"
 
+#include <ctype.h>
+#include <string.h>
+#include <stdbool.h>
+#include "fat32.h"
+
+void trimAndPrintName(const unsigned char * entry) {
+    char name[FILE_NAME_MAX_LENGTH + 1 + FILE_EXT_MAX_LENGTH + 1] = {0}; // 8 + 1 + 3 + 1 (dot and null)
+    int i;
+    for (i = 0; i < 8 && entry[i] != ' '; ++i) {
+        name[i] = entry[i];
+    }
+    if (entry[FILE_NAME_MAX_LENGTH] != ' ') {
+        name[i++] = '.';
+        for (int j = FILE_NAME_MAX_LENGTH; j < (FILE_NAME_MAX_LENGTH + FILE_EXT_MAX_LENGTH) && entry[j] != ' '; ++j) {
+            name[i++] = entry[j];
+        }
+    }
+    name[i] = '\0';
+    printf("Name: %s\n", name);
+}
+
+void formatShortName(const char * fileName, unsigned char * entryName) {
+    memset(entryName, 0x20, 11); // filled with ASCII spaces
+
+    const char * dot = strchr(fileName, '.');
+    int nameLen = dot ? (dot - fileName) : strlen(fileName);
+    int extLen = dot ? strlen(dot + 1) : 0;
+
+    for (int c = 0; c < nameLen && c < 8; ++c)
+        entryName[c] = toupper((unsigned char)fileName[c]);
+
+    for (int c = 0; c < extLen && c < 3; ++c)
+        entryName[8 + c] = toupper((unsigned char)dot[1 + c]);
+}
+
+
+// Allowed special characters in short (8.3) names
+boolean isValidShortChar(char c) {
+    return (boolean) (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') ||
+            c == '!' || c == '#'  || c == '$' || c == '%' ||
+            c == '&' || c == '\'' || c == '(' || c == ')' ||
+            c == '-' || c == '@'  || c == '^' || c == '_' ||
+            c == '`' || c == '{'  || c == '}' || c == '~';
+}
+
+// We check if the name fits 8.3 and convert to uppercase in-place
+boolean isValidShortNameAndUppercaseFile(char * name) {
+    size_t len = strlen(name);
+    size_t dotIndex = len;
+    
+    for (size_t i = 0; i < len; ++i) {
+        if (name[i] == '.') {
+            dotIndex = i;
+            break;
+        }
+    }
+    if (dotIndex == 0 || dotIndex > 8) return False;
+
+    // Extension must be <= 3 characters
+    size_t extLen = (dotIndex == len) ? 0 : len - dotIndex - 1;
+    if (extLen > 3) return False;
+
+    // I validate and convert name part
+    for (size_t i = 0; i < dotIndex; ++i) {
+        char c = name[i];
+        if (islower(c)) c = toupper(c);
+        if (!isValidShortChar(c)) return False;
+        name[i] = c;
+    }
+
+    // I validate and convert extension (if present)
+    for (size_t i = dotIndex + 1; i < len; ++i) {
+        char c = name[i];
+        if (islower(c)) c = toupper(c);
+        if (!isValidShortChar(c)) return False;
+        name[i] = c;
+    }
+    return True;
+}
+
+boolean isValidShortNameAndUppercaseFolder(char * name) {
+    size_t len = strlen(name);
+    for (size_t i = 0; i < len; ++i) {
+        char c = name[i];
+        if (islower(c)) c = toupper(c);
+        if (!isValidShortChar(c)) return False;
+        name[i] = c;
+    }
+    return True;
+}
+
 success writeSector(uint32_t sector, const void * data) {
     if (fseek(volume, sector * SECTOR_SIZE, SEEK_SET) != 0) return Failure;
     if (fwrite(data, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) return Failure;

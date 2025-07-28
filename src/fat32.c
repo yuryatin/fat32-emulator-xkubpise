@@ -4,6 +4,33 @@
 extern char fat32ReadingErrors[FAT32ERRORS_SIZE];
 extern FILE * volume;
 
+void collectNamesInCluster(int cluster) {
+    if (cluster < 2 || cluster >= N_CLUSTERS) {
+        printf("Invalid cluster number: %d\n", cluster);
+        return;
+    }
+
+    uint32_t baseSector = ROOT_DIR_SECTOR + (cluster - 2) * SECTORS_PER_CLUSTER;
+    unsigned char buffer[SECTOR_SIZE];
+
+    for (int sector = 0; sector < SECTORS_PER_CLUSTER; ++sector) {
+        fseek(volume, (baseSector + sector) * SECTOR_SIZE, SEEK_SET);
+        if (fread(buffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
+            printf("Failed to read sector %u\n", baseSector + sector);
+            continue;
+        }
+
+        for (int i = 0; i < SECTOR_SIZE; i += ENTRY_SIZE) {
+            unsigned char * entry = &buffer[i];
+
+            if (entry[0] == 0x00) return; // No more entries
+            if (entry[0] == 0xE5) continue; // Deleted entry
+            if ((entry[11] & 0x0F) == 0x0F) continue; // Long File Name entry, skip for now
+            trimAndPrintName(entry);
+        }
+    }
+}
+
 void initializeDotEntries(uint32_t cluster, uint32_t parentCluster) {
     unsigned char buffer[SECTOR_SIZE];
     memset(buffer, 0, SECTOR_SIZE);
@@ -79,7 +106,7 @@ success createEmptyFile(const char * fileName, int parentCluster) {
 
     // I clear and set file entry
     memset(buffer + freeEntryIndex * ENTRY_SIZE, 0, ENTRY_SIZE);
-    strncpy((char *)(buffer + freeEntryIndex * ENTRY_SIZE), fileName, FILE_NAME_MAX_LENGTH);
+    formatShortName(fileName, buffer + freeEntryIndex * ENTRY_SIZE);
     buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH] = 0x20; // Regular file attribute
 
     // No cluster allocated, so set both high and low words of cluster number to 0
@@ -105,7 +132,8 @@ success createEmptyFile(const char * fileName, int parentCluster) {
 }
 
 success createNewFolder(const char * folderName, int cluster, int parentCluster) {
-    if (!folderName || strlen(folderName) == 0 || strlen(folderName) > FILE_NAME_MAX_LENGTH) {
+    size_t nameLen = strlen(folderName);
+    if (!folderName || nameLen == 0 || nameLen > FILE_NAME_MAX_LENGTH - 3) {
         printf("Invalid folder name: %s\n", folderName);
         return Failure;
     }
@@ -132,8 +160,15 @@ success createNewFolder(const char * folderName, int cluster, int parentCluster)
         printf("Failed to read sector %u for cluster %d\n", sector, parentCluster);
         return Failure;
     }
-    memset(buffer + freeEntryIndex * ENTRY_SIZE, 0, ENTRY_SIZE); // Clear the entry
-    strncpy((char *)(buffer + freeEntryIndex * ENTRY_SIZE), folderName, FILE_NAME_MAX_LENGTH);
+    unsigned char * entryName = buffer + freeEntryIndex * ENTRY_SIZE;
+    memset(entryName, 0, ENTRY_SIZE); // Clear the entry
+    memset(entryName, 0x20, FILE_NAME_MAX_LENGTH);
+    for (size_t i = 0; i < nameLen; ++i) {
+        char c = folderName[i];
+        if (c >= 'a' && c <= 'z') c -= 32;  // Uppercase
+        entryName[i] = c;
+    }
+
     buffer[freeEntryIndex * ENTRY_SIZE + FILE_NAME_MAX_LENGTH] = 0x10; // Directory attribute
     uint32_t firstCluster = cluster;
     buffer[freeEntryIndex * ENTRY_SIZE + 26] = firstCluster & 0xFF;
