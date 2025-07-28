@@ -31,6 +31,7 @@
 typedef enum { False, True } boolean;
 typedef enum { Failure, Success } success;
 typedef enum { FAT32_OK, FAT32_ERROR, FAT32_NOT_FOUND } fat32_status_t;
+typedef enum { itsFile, itsFolder } IsFolder;
 
 extern FILE * volume;
 
@@ -41,7 +42,7 @@ void trimAndPrintName(const unsigned char * entry);
 void formatShortName(const char * fileName, unsigned char * entryName);
 void toLowerRegister(const char * name, char * nameLower);
 boolean isValidShortChar(char c, boolean fullPath, boolean withLowercase);
-boolean isValidShortNameAndUppercaseFile(char * name);
+boolean isValidShortNameAndUppercaseFile(char * name, IsFolder isFolder);
 boolean isValidShortNameAndUppercaseFolder(char * name);
 success writeSector(uint32_t sector, const void * data);
 success writeSectors(uint32_t startSector, const void * data, size_t count);

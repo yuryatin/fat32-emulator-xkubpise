@@ -111,7 +111,7 @@ uint32_t findClusterByFullPath(const char * inputPath, uint32_t currentCluster) 
     while (token) {
         uint32_t nextCluster = findSubdirectoryCluster(token, iCluster);
         if (nextCluster == 0) {
-            printf("Directory \033[31m%s\033[0m not found in %s\n", token, inputPath);
+            printf("Directory \033[31m%s\033[0m from the path %s not found\n", token, inputPath);
             return 0;
         }
         iCluster = nextCluster;
@@ -245,7 +245,7 @@ uint32_t findFreeCluster() {
     return 0; // No free cluster found
 }
 
-success createNewObject(const char * objectName, int firstCluster, int parentCluster, boolean isFolder) {
+success createNewObject(const char * objectName, int firstCluster, int parentCluster, IsFolder isFolder) {
     size_t nameLen = strlen(objectName);
     if (isFolder) {
         if (!objectName || nameLen == 0 || nameLen > FILE_NAME_MAX_LENGTH) {

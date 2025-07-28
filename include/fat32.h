@@ -21,7 +21,7 @@ void buildPathToRoot(uint32_t currentCluster, char * outPath);
 uint32_t findClusterByFullPath(const char * inputPath, uint32_t currentCluster);
 uint32_t findSubdirectoryCluster(const char * name, uint32_t cluster);
 uint32_t findFreeCluster();
-success createNewObject(const char * objectName, int firstCluster, int parentCluster, boolean isFolder);
+success createNewObject(const char * objectName, int firstCluster, int parentCluster, IsFolder isFolder);
 int collectNamesInCluster(int cluster);
 void initializeDotEntries(uint32_t cluster, uint32_t parentCluster);
 int findFirstFreeEntry(int cluster);

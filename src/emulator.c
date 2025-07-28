@@ -34,7 +34,10 @@ void emulate(void) {
         } else if (strcmp(input, "q") == 0) {
             puts("Emulation shuts down...");
             return;
-        } else if (strcmp(input, "ls") == 0) {
+        } else if (strcmp(input, "pwd") == 0) {
+            buildPathToRoot(currentCluster, location);
+            printf("%s@xkubpise %s> ", username, location);
+        } else if (strcmp(input, "ls") == 0 || strcmp(input, "dir") == 0) {
             int nInDir = collectNamesInCluster(currentCluster);
             if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0) {
                 for (int i = 0; i < nInDir; ++i) {
@@ -52,9 +55,9 @@ void emulate(void) {
         } else if (strcmp(input, "cd") == 0) {
             inDir = False;
             scanf("%511s", newDirPath);
-            /*if (!isValidShortNameAndUppercaseFile(newObj) && strcmp(newObj, ".") && strcmp(newObj, "..")) {
+            /*if (!isValidShortNameAndUppercaseFile(newObj, itsFolder) && strcmp(newObj, ".") && strcmp(newObj, "..")) {
                 printf("Impossible folder name: \033[31m%s\033[0m\n", newObj);
-                continue;
+                skipRest(); continue;
             }
             nInDir = collectNamesInCluster(currentCluster);
             for (j = 0; j < nInDir; ++j) {
@@ -65,10 +68,7 @@ void emulate(void) {
             }
             if (inDir) { */
             uint32_t newCluster = findClusterByFullPath(newDirPath, currentCluster);
-            if (newCluster == 0) {
-                //printf("No folder %s in this directory\n", newDirPath);
-                continue;
-            }
+            if (newCluster == 0) { skipRest(); continue; }
             currentCluster = newCluster;
             /*} else {
                 printf("Folder %s not found in the current directory\n", newObj);
@@ -76,9 +76,9 @@ void emulate(void) {
         } else if (strcmp(input, "mkdir") == 0) {
             inDir = False;
             scanf("%8s", newObj);
-            if (!isValidShortNameAndUppercaseFile(newObj)) {
+            if (!isValidShortNameAndUppercaseFile(newObj, itsFolder)) {
                 printf("Invalid folder name: %s\n", newObj);
-                continue;
+                skipRest(); continue;
             }
             nInDir = collectNamesInCluster(currentCluster);
             for (int i = 0; i < nInDir; ++i) {
@@ -88,23 +88,23 @@ void emulate(void) {
                     break;
                 }
             }
-            if (inDir) continue;
+            if (inDir) { skipRest(); continue; }
             uint32_t newCluster = findFreeCluster();
             if (newCluster == 0) {
                 printf("No free clusters available to create a new folder\n");
-                continue;
+                skipRest(); continue;
             }
-            if (createNewObject(newObj, newCluster, currentCluster, True) == Failure) {
+            if (createNewObject(newObj, newCluster, currentCluster, itsFolder) == Failure) {
                 printf("Failed to create folder %s\n", newObj);
-                continue;
+                skipRest(); continue;
             }
             printf("Folder %s created successfully\n", newObj);
         } else if (strcmp(input, "touch") == 0) {
             inDir = False;
             scanf("%12s", newObj);
-            if (!isValidShortNameAndUppercaseFile(newObj)) {
+            if (!isValidShortNameAndUppercaseFile(newObj, itsFile)) {
                 printf("Invalid file name: %s\n", newObj);
-                continue;
+                skipRest(); continue;
             }
             nInDir = collectNamesInCluster(currentCluster);
             for (int i = 0; i < nInDir; ++i) {
@@ -114,10 +114,10 @@ void emulate(void) {
                     break;
                 }
             }
-            if (inDir) continue;
-            if (createNewObject(newObj, 0, currentCluster, False) == Failure) {
+            if (inDir) { skipRest(); continue; }
+            if (createNewObject(newObj, 0, currentCluster, itsFile) == Failure) {
                 printf("Failed to create file %s\n", newObj);
-                continue;
+                skipRest(); continue;
             }
             printf("File %s created successfully\n", newObj);
         } else {

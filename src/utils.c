@@ -71,12 +71,13 @@ boolean isValidShortChar(char c, boolean fullPath, boolean withLowercase) {
 }
 
 // We check if the name fits 8.3 and convert to uppercase in-place
-boolean isValidShortNameAndUppercaseFile(char * name) {
+boolean isValidShortNameAndUppercaseFile(char * name, IsFolder isFolder) {
     size_t len = strlen(name);
     size_t dotIndex = len;
     
     for (size_t i = 0; i < len; ++i) {
         if (name[i] == '.') {
+            if (isFolder) return False;
             dotIndex = i;
             break;
         }
