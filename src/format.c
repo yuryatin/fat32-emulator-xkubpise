@@ -87,7 +87,7 @@ success format(void) {
     ret = writeSector(1, fsinfoSector);
     if (ret == Failure) return ret;
 
-    initializeDotEntries(ROOT_CLUSTER, ROOT_CLUSTER);
+    //initializeDotEntries(ROOT_CLUSTER, ROOT_CLUSTER); unnecessary for root
     return Success;
 }
 
