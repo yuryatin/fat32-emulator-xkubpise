@@ -82,6 +82,7 @@ success format(void) {
     *(uint32_t *)(fsinfoSector + 0x1E4) = 0x61417272; // Structure signature
     *(uint32_t *)(fsinfoSector + 0x1E8) = TOTAL_N_SECTORS / SECTORS_PER_CLUSTER - 2; // Free cluster count (approximate)
     *(uint32_t *)(fsinfoSector + 0x1EC) = ROOT_CLUSTER + 1; // Next free cluster (start after root cluster)
+    *(uint32_t *)(fsinfoSector + 0x1FC) = 0xAA550000; //  end-of-sector signature ("magic number")
 
     ret = writeSector(1, fsinfoSector);
     if (ret == Failure) return ret;
