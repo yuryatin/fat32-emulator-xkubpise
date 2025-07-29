@@ -8,7 +8,6 @@
 #define LOCATION_MAX_LENGTH (1024 * 4)
 #define INPUT_MAX_LENGTH 512
 
-void printPrompt(void);
 void emulate(void);
 
 #endif

@@ -6,13 +6,29 @@ extern char fat32ReadingErrors[FAT32ERRORS_SIZE];
 extern FILE * volume;
 extern char localFilesAndFolders[SECTOR_SIZE / FAT_ENTRY_SIZE][FULL_FILE_STRING_SIZE];
 
-void readSector(uint32_t sector, uint8_t * buffer) {
-    fseek(volume, sector * SECTOR_SIZE, SEEK_SET);
-    fread(buffer, 1, SECTOR_SIZE, volume);
-    if (ferror(volume)) {
+success readSector(uint32_t sector, uint8_t * buffer) {
+    if (fseek(volume, sector * SECTOR_SIZE, SEEK_SET) != 0) {
+        perror("fseek");
+        return Failure;
+    }
+    if (fread(buffer, 1, SECTOR_SIZE, volume) != SECTOR_SIZE) {
         printf("Error reading sector %u\n", sector);
         perror("fread");
+        return Failure;
     }
+    return Success;
+}
+
+success readSectors(uint32_t sector, void * buffer, uint32_t count) {
+    if (fseek(volume, sector * SECTOR_SIZE, SEEK_SET) != 0) {
+        perror("fseek (readSectors)");
+        return Failure;
+    }
+    if (fread(buffer, 1, SECTOR_SIZE * count, volume) != SECTOR_SIZE * count) {
+        perror("fread (readSectors)");
+        return Failure;
+    }
+    return Success;
 }
 
 void readCluster(uint32_t clusterNumber, uint8_t * buffer) {
@@ -404,24 +420,25 @@ void commentOnExtFlags(uint16_t bpb_ExtFlags) {
         appendToFAT32ReadingErrors("\tWarning: Reserved bits in Extended Flags are non-zero!\n");
 }
 
-boolean isValidFAT32xkubpise(const char * filename) {
+IsFormatted isValidFAT32xkubpise(const char * filename) {
+    IsFormatted issues = notFormatted;
     boolean anyErrors = False;
     volume = fopen(filename, "r+b");
     if (!volume) {
         appendToFAT32ReadingErrors("Error opening the volume\n");
-        return False;
+        return badSize;
     } else {
         fseek(volume, 0, SEEK_END);
         long size = ftell(volume);
         fseek(volume, 0, SEEK_SET);
         if (size != TOTAL_SIZE) {
             appendToFAT32ReadingErrors("Volume doesn't have mandatory size of 20 MB\n\tIts size is %ld bytes\n", size);
-            anyErrors = True;
+            issues = badSize;
         }
         if (size < SECTOR_SIZE) {
             appendToFAT32ReadingErrors("Volume is even smaller than %d bytes to host its BIOS Parameter Block\n", SECTOR_SIZE);
             fclose(volume);
-            return False;
+            return badSize;
         }
     }
 
@@ -430,7 +447,7 @@ boolean isValidFAT32xkubpise(const char * filename) {
     if(bootSectorRead != SECTOR_SIZE) {
         appendToFAT32ReadingErrors("Couldn't read full boot sector\nOnly %ld bytes have been read\n", bootSectorRead);
         fclose(volume);
-        return False;
+        return badSize;
     }
 
     if (!(buffer[0x52] == 'F' && buffer[0x53] == 'A' && buffer[0x54] == 'T' && buffer[0x55] == '3' && buffer[0x56] == '2')) {
@@ -515,5 +532,7 @@ boolean isValidFAT32xkubpise(const char * filename) {
         appendToFAT32ReadingErrors("FAT32 File System Version (should be zero): %u\n", bpb_FSVer);
         anyErrors = True;
     }
-    return !anyErrors;
+    if (issues == notFormatted && !anyErrors) return formatted;
+    if (issues == notFormatted && anyErrors) return notFormatted;
+    return badSize;
 }

@@ -1,6 +1,52 @@
 #include "format.h"
 #include "fat32.h"
 
+boolean checkFormatting(void) {
+    success ret = Success;
+
+    // Check FAT contents
+    uint32_t * fat = malloc(FAT_SIZE * SECTOR_SIZE);
+    if (!fat) {
+        printf("Failed to allocate memory for FAT\n");
+        return False;
+    }
+    ret = readSectors(N_RESERVED_SECTORS, fat, FAT_SIZE);
+    if (ret == Failure) {
+        free(fat);
+        printf("Failed to read FAT sectors\n");
+        return False;
+    }
+
+    if (((fat[0] & FAT_ENTRY_MASK) != (0xFFFFFFF8 & FAT_ENTRY_MASK)) ||
+    ((fat[1] & FAT_ENTRY_MASK) != (0x0FFFFFFF & FAT_ENTRY_MASK)) ||
+    ((fat[ROOT_CLUSTER] & FAT_ENTRY_MASK) != (0x0FFFFFFF & FAT_ENTRY_MASK))) {
+        printf("FAT entries are incorrect\n");
+        free(fat);
+        return False;
+    }
+    free(fat);
+
+    // Check FSInfo sector
+    uint8_t fsinfoSector[SECTOR_SIZE];
+    ret = readSector(1, fsinfoSector);
+    if (ret == Failure) {
+        printf("Failed to read FSInfo sector\n");
+        return False;
+    }
+
+    if (*(uint32_t *)(fsinfoSector + 0x00) != 0x41615252 ||
+        *(uint32_t *)(fsinfoSector + 0x1E4) != 0x61417272) {
+        printf("FSInfo sector is incorrect\n");
+        return False;
+    }
+    uint32_t nextFreeCluster = *(uint32_t *)(fsinfoSector + 0x1EC);
+    if ((nextFreeCluster < ROOT_CLUSTER || nextFreeCluster > N_CLUSTERS + ROOT_CLUSTER - 1) && (nextFreeCluster != 0)) {
+        printf("Next free cluster in FSInfo sector is out of bounds\n");
+        return False;
+    }
+    return True;
+}
+
 success format(void) {
     puts("Formatting FAT32 volume...");
     success ret = Success;
@@ -35,7 +81,7 @@ success format(void) {
     *(uint32_t *)(fsinfoSector + 0x00) = 0x41615252;  // Lead signature
     *(uint32_t *)(fsinfoSector + 0x1E4) = 0x61417272; // Structure signature
     *(uint32_t *)(fsinfoSector + 0x1E8) = TOTAL_N_SECTORS / SECTORS_PER_CLUSTER - 2; // Free cluster count (approximate)
-    *(uint32_t *)(fsinfoSector + 0x1EC) = ROOT_CLUSTER; // Next free cluster (start at root cluster)
+    *(uint32_t *)(fsinfoSector + 0x1EC) = ROOT_CLUSTER + 1; // Next free cluster (start after root cluster)
 
     ret = writeSector(1, fsinfoSector);
     if (ret == Failure) return ret;
