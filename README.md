@@ -6,6 +6,9 @@ This is a simple FAT32 emulator for the terminal, designed for quasi-POSIX-compl
 - long filenames are not supported
 - the number of reserved sectors and FAT table sectors is fixed
 
+
+<img src="https://github.com/user-attachments/assets/01c0e71d-3255-4eba-af1d-13743fa16b2a" alt="fat32 demo" width="618"/>
+
 # What you can do in the emulator
 - navigate folders with `cd` in two modes:
   - default mode: only absolute paths are accepted
